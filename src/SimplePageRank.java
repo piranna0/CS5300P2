@@ -12,11 +12,11 @@ import org.apache.hadoop.util.*;
 public class SimplePageRank 
 {	
 	public static enum MY_COUNTERS {
-		BLAH,
 		RESIDUAL
 	};
 
-	static int N = 685230; //Number of nodes
+	//static int N = 685230; //Number of nodes
+	static int N = 5; //Number of nodes
 	static double d = .85; //Damping factor
 	private static int NUM_PASSES = 5;	// number of passes of mapreduce
 	private static int[] null_array = new int[0];
@@ -120,11 +120,8 @@ public class SimplePageRank
 
 			output.collect(key, constructValue(pageRankTotal, outlinks));
 
-			// some counter
-			reporter.getCounter(MY_COUNTERS.BLAH).increment((long)(pageRankTotal * 10000));
-			
 			// calculate residual and increment counter
-			double residual = Math.abs(pagerankPrev - pageRankTotal) / pageRankTotal;
+			double residual = (Math.abs(pagerankPrev - pageRankTotal) / pageRankTotal) * 10000;
 			reporter.getCounter(MY_COUNTERS.RESIDUAL).increment((long)residual);
 		}
 	}
@@ -149,6 +146,7 @@ public class SimplePageRank
 		// run the job
 		RunningJob rj = null;
 		Path prevPath = null;
+		long[] avg_residuals = new long[NUM_PASSES];	// stores the residuals for each pass (index = pass number)
 		for (int i = 0; i < NUM_PASSES; i++)
 		{
 			// TODO: input and output paths should be s3
@@ -169,29 +167,25 @@ public class SimplePageRank
 			// run job
 			rj = JobClient.runJob(conf);
 			
-			// get counters
+			// read from counters
 			Counters c = rj.getCounters();
-			long counter = c.getCounter(MY_COUNTERS.BLAH);
-			long residual_counter = c.getCounter(MY_COUNTERS.RESIDUAL);
-			long avg_residual = residual_counter / N;
-
-			// write counter values to an output file
-			try 
+			long residual_counter = c.getCounter(MY_COUNTERS.RESIDUAL) / (long)10000;
+			avg_residuals[i] = residual_counter / N;
+		}
+		
+		// write avg_residual values to an output file
+		try 
+		{
+			PrintWriter writer = new PrintWriter("simplepagerank_output.txt");
+			for (int i = 0; i < NUM_PASSES; i++)
 			{
-				PrintWriter writer = new PrintWriter("simplepagerank_" + Integer.toString(i) + ".txt");
-				writer.write("BLAH: " + Long.toString(counter) + '\n');
-				writer.write("AVG RESIDUAL: " + Long.toString(avg_residual));
-				writer.close();
-			} 
-			catch (FileNotFoundException e)
-			{
-				e.printStackTrace();
+				writer.write("Iteration " + Integer.toString(i) + " avg residual " + Long.toString(avg_residuals[i]) + '\n');
 			}
-			
-			// TODO: not sure if this is needed
-			// re-initialize counters for next phase
-			c.findCounter("MY_COUNTERS", "BLAH").setValue(0);
-			c.findCounter("MY_COUNTERS", "RESIDUAL").setValue(0);
+			writer.close();
+		} 
+		catch (FileNotFoundException e)
+		{
+			e.printStackTrace();
 		}
 	}
 }

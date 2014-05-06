@@ -10,13 +10,15 @@ import org.apache.hadoop.mapred.*;
 import org.apache.hadoop.util.*;
 
 public class SimplePageRank 
-{
+{	
 	public static enum MY_COUNTERS {
 		BLAH
 	};
-	
+
+	static int N = 685230; //Number of nodes
+	static double d = .85; //Damping factor
 	private static int[] null_array = new int[0];
-	
+
 	public static class Tuple<X, Y> 
 	{ 
 		public final X x; 
@@ -27,7 +29,7 @@ public class SimplePageRank
 			this.y = y; 
 		} 
 	} 
-	
+
 	// parses the raw Text input values
 	public static Tuple<Double, int[]> parseValue(Text value)
 	{
@@ -38,10 +40,10 @@ public class SimplePageRank
 		{
 			outlinks[i-1] = Integer.parseInt(parts[i]);
 		}
-		
+
 		return new Tuple<Double, int[]>(pagerank, outlinks);
 	}
-	
+
 	// constructs the raw Text value from the PR and outlink array
 	public static Text constructValue(double pr, int[] outlinks)
 	{
@@ -50,10 +52,13 @@ public class SimplePageRank
 		{
 			s += "_" + outlinks[i];
 		}
-		
+
 		return new Text(s);
 	}
-	
+
+
+	//Input/Output Text Format: 
+	//u;PR(u)_v_w_x...
 	// input: <<outlink, rank>, list of inlinks>
 	// output (for each inlink): <inlink, <outlink, rank>>
 	public static class Map extends MapReduceBase implements Mapper<LongWritable, Text, LongWritable, Text> 
@@ -65,19 +70,16 @@ public class SimplePageRank
 			double pagerank = parsed_value.x;
 			int[] outlinks = parsed_value.y;
 			double N = outlinks.length;
-			
+
 			// reverse links and emit 
 			for (int i = 0; i < N; i++)
 			{
 				LongWritable writable_outlink = new LongWritable(outlinks[i]);
 				output.collect(writable_outlink, constructValue(pagerank / N, null_array));
 			}
-			
+
 			// emit the set of outlinks
 			output.collect(key, value);
-			
-			// increment iteration counter
-			reporter.getCounter(MY_COUNTERS.BLAH).increment(1);
 		}
 	}
 
@@ -89,8 +91,8 @@ public class SimplePageRank
 			double pagerank;
 			int[] links;
 			int[] outlinks = new int[0];
-			double N = 0;
-			long ranksum = 0;
+			int numInlinks = 0;
+			double pageRankSum = 0;
 
 			// extract from values
 			while (values.hasNext())
@@ -99,21 +101,23 @@ public class SimplePageRank
 				Tuple<Double, int[]> parsed_value = parseValue(v);
 				pagerank = parsed_value.x;
 				links = parsed_value.y;
-				N = links.length;
-				
-				// if v is an inlink, accumulate its pagerank
-				if (N == 0)
+				numInlinks = links.length;
+
+				if (numInlinks == 0) // if v is an inlink, accumulate its pagerank
 				{
-					ranksum += pagerank / N;
+					pageRankSum += pagerank;
 				}
-				// otherwise, it's the list of outlinks
-				else
+				else // otherwise, it's the list of outlinks
 				{
 					outlinks = links;
 				}
 			}
+			double pageRankTotal = ((1-d) / N) + (pageRankSum * d);
 
-			output.collect(key, constructValue(ranksum, outlinks));
+			output.collect(key, constructValue(pageRankTotal, outlinks));
+			
+			// increment iteration counter
+			reporter.getCounter(MY_COUNTERS.BLAH).increment((long)(pageRankTotal * 10000));
 		}
 	}
 
@@ -135,10 +139,10 @@ public class SimplePageRank
 		// TODO: input and output paths should be s3
 		FileInputFormat.setInputPaths(conf, new Path(args[0]));
 		FileOutputFormat.setOutputPath(conf, new Path(args[1]));
-		
+
 		// run the job
 		RunningJob rj = JobClient.runJob(conf);
-		
+
 		// get counters
 		Counters c = rj.getCounters();
 		long counter = c.getCounter(MY_COUNTERS.BLAH);

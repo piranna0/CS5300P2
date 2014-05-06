@@ -15,44 +15,81 @@ public class SimplePageRank
 		BLAH
 	};
 	
-	// input (phase 1): <line#, line>
-	// input (phase >1): <<outlink, rank>, list of inlinks>
+	private static int[] null_array = new int[0];
+	
+	// input: <<outlink, rank>, list of inlinks>
 	// output (for each inlink): <inlink, <outlink, rank>>
-	public static class Map extends MapReduceBase implements Mapper<SimpleKey, SimpleValue, Text, Tuple<Text, LongWritable>> 
+	public static class Map extends MapReduceBase implements Mapper<Integer, SimpleValue, Integer, SimpleValue> 
 	{
 		private Text outlink = new Text();
 		private Text inlink = new Text();
 
-		//public void map(LongWritable key, Text value, OutputCollector<Text, Tuple<Text, LongWritable>> output, Reporter reporter) throws IOException 
-		public void map(SimpleKey key, SimpleValue value, OutputCollector<Text, Tuple<Text, LongWritable>> output, Reporter reporter) throws IOException 
+		public void map(Integer key, SimpleValue value, OutputCollector<Integer, SimpleValue> output, Reporter reporter) throws IOException 
 		{
-			// read from simplekey and simplevalue
+			// extract from value
+			double pagerank = value.pagerank;
+			int[] outlinks = value.nodes;
+			double N = outlinks.length;
 			
-			// process: reverse outlinks
+			// reverse links and emit 
+			for (int i = 0; i < N; i++)
+			{
+				output.collect(outlinks[i], new SimpleValue(pagerank / N, null_array));
+			}
 			
-			output.collect();
+			// emit the set of outlinks
+			output.collect(key, value);
 			
 			// increment iteration counter
 			reporter.getCounter(MY_COUNTERS.BLAH).increment(1);
 		}
 	}
 
-	public static class Reduce extends MapReduceBase implements Reducer<Text, IntWritable, SimpleKey, SimpleValue> 
+	public static class Reduce extends MapReduceBase implements Reducer<Integer, SimpleValue, Integer, SimpleValue> 
 	{
-		public void reduce(Text key, Iterator<IntWritable> values, OutputCollector<SimpleKey, SimpleValue> output, Reporter reporter) throws IOException 
+		public void reduce(Integer key, Iterator<SimpleValue> values, OutputCollector<Integer, SimpleValue> output, Reporter reporter) throws IOException 
 		{
-			int sum = 0;
-			while (values.hasNext()) 
+			SimpleValue v;
+			double pagerank;
+			int[] links;
+			int[] outlinks = new int[0];
+			double N = 0;
+			long ranksum = 0;
+
+//			// count how many values there are
+//			while (values.hasNext())
+//			{
+//				values.next();
+//				N++;
+//			}
+			
+			// extract from values
+			while (values.hasNext())
 			{
-				sum += values.next().get();
+				v = values.next();
+				pagerank = v.pagerank;
+				links = v.nodes;
+				N = links.length;
+				
+				// if v is an inlink, accumulate its pagerank
+				if (N == 0)
+				{
+					ranksum += pagerank / N;
+				}
+				// otherwise, it's the list of outlinks
+				else
+				{
+					outlinks = links;
+				}
 			}
-			output.collect(key, new IntWritable(sum));
+			
+			output.collect(key, new SimpleValue(ranksum, outlinks));
 		}
 	}
 
 	public static void main(String[] args) throws Exception 
 	{
-		JobConf conf = new JobConf(WordCount.class);
+		JobConf conf = new JobConf(SimplePageRank.class);
 		conf.setJobName("wordcount");
 
 		conf.setOutputKeyClass(Text.class);
@@ -72,6 +109,7 @@ public class SimplePageRank
 		// run the job
 		RunningJob rj = JobClient.runJob(conf);
 		
+		// get counters
 		Counters c = rj.getCounters();
 		long counter = c.getCounter(MY_COUNTERS.BLAH);
 

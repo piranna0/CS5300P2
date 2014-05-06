@@ -1,7 +1,7 @@
 
 public class SimpleValue {
-	double pagerank;
-	int[] nodes;
+	public double pagerank;
+	public int[] nodes;
 	
 	public SimpleValue(double pagerank, int[] nodes) {
 		this.pagerank = pagerank;

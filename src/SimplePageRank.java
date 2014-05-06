@@ -17,24 +17,60 @@ public class SimplePageRank
 	
 	private static int[] null_array = new int[0];
 	
+	public static class Tuple<X, Y> 
+	{ 
+		public final X x; 
+		public final Y y; 	
+		public Tuple(X x, Y y) 
+		{ 
+			this.x = x; 
+			this.y = y; 
+		} 
+	} 
+	
+	// parses the raw Text input values
+	public static Tuple<Double, int[]> parseValue(Text value)
+	{
+		String[] parts = value.toString().split("_");
+		Double pagerank = Double.parseDouble(parts[0]);
+		int[] outlinks = new int[parts.length - 1];
+		for (int i = 1; i < parts.length; i++)
+		{
+			outlinks[i-1] = Integer.parseInt(parts[i]);
+		}
+		
+		return new Tuple<Double, int[]>(pagerank, outlinks);
+	}
+	
+	// constructs the raw Text value from the PR and outlink array
+	public static Text constructValue(double pr, int[] outlinks)
+	{
+		String s = Double.toString(pr);
+		for (int i = 0; i < outlinks.length; i++)
+		{
+			s += "_" + outlinks[i];
+		}
+		
+		return new Text(s);
+	}
+	
 	// input: <<outlink, rank>, list of inlinks>
 	// output (for each inlink): <inlink, <outlink, rank>>
-	public static class Map extends MapReduceBase implements Mapper<Integer, SimpleValue, Integer, SimpleValue> 
-	{
-		private Text outlink = new Text();
-		private Text inlink = new Text();
-
-		public void map(Integer key, SimpleValue value, OutputCollector<Integer, SimpleValue> output, Reporter reporter) throws IOException 
+	public static class Map extends MapReduceBase implements Mapper<LongWritable, Text, LongWritable, Text> 
+	{		
+		public void map(LongWritable key, Text value, OutputCollector<LongWritable, Text> output, Reporter reporter) throws IOException 
 		{
 			// extract from value
-			double pagerank = value.pagerank;
-			int[] outlinks = value.nodes;
+			Tuple<Double, int[]> parsed_value = parseValue(value);
+			double pagerank = parsed_value.x;
+			int[] outlinks = parsed_value.y;
 			double N = outlinks.length;
 			
 			// reverse links and emit 
 			for (int i = 0; i < N; i++)
 			{
-				output.collect(outlinks[i], new SimpleValue(pagerank / N, null_array));
+				LongWritable writable_outlink = new LongWritable(outlinks[i]);
+				output.collect(writable_outlink, constructValue(pagerank / N, null_array));
 			}
 			
 			// emit the set of outlinks
@@ -45,30 +81,24 @@ public class SimplePageRank
 		}
 	}
 
-	public static class Reduce extends MapReduceBase implements Reducer<Integer, SimpleValue, Integer, SimpleValue> 
+	public static class Reduce extends MapReduceBase implements Reducer<LongWritable, Text, LongWritable, Text> 
 	{
-		public void reduce(Integer key, Iterator<SimpleValue> values, OutputCollector<Integer, SimpleValue> output, Reporter reporter) throws IOException 
+		public void reduce(LongWritable key, Iterator<Text> values, OutputCollector<LongWritable, Text> output, Reporter reporter) throws IOException 
 		{
-			SimpleValue v;
+			Text v;
 			double pagerank;
 			int[] links;
 			int[] outlinks = new int[0];
 			double N = 0;
 			long ranksum = 0;
 
-//			// count how many values there are
-//			while (values.hasNext())
-//			{
-//				values.next();
-//				N++;
-//			}
-			
 			// extract from values
 			while (values.hasNext())
 			{
 				v = values.next();
-				pagerank = v.pagerank;
-				links = v.nodes;
+				Tuple<Double, int[]> parsed_value = parseValue(v);
+				pagerank = parsed_value.x;
+				links = parsed_value.y;
 				N = links.length;
 				
 				// if v is an inlink, accumulate its pagerank
@@ -82,8 +112,8 @@ public class SimplePageRank
 					outlinks = links;
 				}
 			}
-			
-			output.collect(key, new SimpleValue(ranksum, outlinks));
+
+			output.collect(key, constructValue(ranksum, outlinks));
 		}
 	}
 

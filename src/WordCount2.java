@@ -64,6 +64,7 @@ public class WordCount2
 		conf.setOutputFormat(TextOutputFormat.class);
 
 		FileInputFormat.setInputPaths(conf, new Path(args[0]));
+		//FileInputFormat.setInputPaths(conf, new Path("s3://edu-cornell-cs-cs5300s14-gws55.s3.amazonaws.com/wordcount/input/"));
 		FileOutputFormat.setOutputPath(conf, new Path(args[1]));
 		
 		RunningJob rj = JobClient.runJob(conf);

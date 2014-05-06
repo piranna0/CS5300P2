@@ -12,11 +12,13 @@ import org.apache.hadoop.util.*;
 public class SimplePageRank 
 {	
 	public static enum MY_COUNTERS {
+		BLAH,
 		RESIDUAL
 	};
 
 	static int N = 685230; //Number of nodes
 	static double d = .85; //Damping factor
+	private static int NUM_PASSES = 5;	// number of passes of mapreduce
 	private static int[] null_array = new int[0];
 
 	public static class Tuple<X, Y> 
@@ -89,6 +91,7 @@ public class SimplePageRank
 		{
 			Text v;
 			double pagerank;
+			double pagerankPrev = 0;
 			int[] links;
 			int[] outlinks = new int[0];
 			int numInlinks = 0;
@@ -109,15 +112,20 @@ public class SimplePageRank
 				}
 				else // otherwise, it's the list of outlinks
 				{
+					pagerankPrev = pagerank;
 					outlinks = links;
 				}
 			}
 			double pageRankTotal = ((1-d) / N) + (pageRankSum * d);
 
 			output.collect(key, constructValue(pageRankTotal, outlinks));
+
+			// some counter
+			reporter.getCounter(MY_COUNTERS.BLAH).increment((long)(pageRankTotal * 10000));
 			
-			// residual counter
-			reporter.getCounter(MY_COUNTERS.RESIDUAL).increment((long)(pageRankTotal * 10000));
+			// calculate residual and increment counter
+			double residual = Math.abs(pagerankPrev - pageRankTotal) / pageRankTotal;
+			reporter.getCounter(MY_COUNTERS.RESIDUAL).increment((long)residual);
 		}
 	}
 
@@ -134,30 +142,56 @@ public class SimplePageRank
 		conf.setReducerClass(Reduce.class);
 
 		conf.setInputFormat(KeyValueTextInputFormat.class);
-		conf.set("mapreduce.input.keyvaluelinerecordreader.key.value.separator", ";");
 		conf.setOutputFormat(TextOutputFormat.class);
-
-		// TODO: input and output paths should be s3
-		FileInputFormat.setInputPaths(conf, new Path(args[0]));
-		FileOutputFormat.setOutputPath(conf, new Path(args[1]));
+		conf.set("mapreduce.input.keyvaluelinerecordreader.key.value.separator", ";");
+		conf.set("mapreduce.output.textoutputformat.separator", ";");
 
 		// run the job
-		RunningJob rj = JobClient.runJob(conf);
-
-		// get counters
-		Counters c = rj.getCounters();
-		long counter = c.getCounter(MY_COUNTERS.RESIDUAL);
-
-		// write counter values to an output file
-		try 
+		RunningJob rj = null;
+		Path prevPath = null;
+		for (int i = 0; i < NUM_PASSES; i++)
 		{
-			PrintWriter writer = new PrintWriter("testCounter.txt");
-			writer.write("counter: " + Long.toString(counter));
-			writer.close();
-		} 
-		catch (FileNotFoundException e)
-		{
-			e.printStackTrace();
+			// TODO: input and output paths should be s3
+			// input path
+			if (i == 0)
+			{
+				FileInputFormat.setInputPaths(conf, new Path(args[0]));
+			}
+			else
+			{
+				FileInputFormat.setInputPaths(conf, prevPath);
+			}
+			
+			// output path
+			prevPath = new Path("./simplepagerank_output" + Integer.toString(i));
+			FileOutputFormat.setOutputPath(conf, prevPath);
+			
+			// run job
+			rj = JobClient.runJob(conf);
+			
+			// get counters
+			Counters c = rj.getCounters();
+			long counter = c.getCounter(MY_COUNTERS.BLAH);
+			long residual_counter = c.getCounter(MY_COUNTERS.RESIDUAL);
+			long avg_residual = residual_counter / N;
+
+			// write counter values to an output file
+			try 
+			{
+				PrintWriter writer = new PrintWriter("simplepagerank_" + Integer.toString(i) + ".txt");
+				writer.write("BLAH: " + Long.toString(counter) + '\n');
+				writer.write("AVG RESIDUAL: " + Long.toString(avg_residual));
+				writer.close();
+			} 
+			catch (FileNotFoundException e)
+			{
+				e.printStackTrace();
+			}
+			
+			// TODO: not sure if this is needed
+			// re-initialize counters for next phase
+			c.findCounter("MY_COUNTERS", "BLAH").setValue(0);
+			c.findCounter("MY_COUNTERS", "RESIDUAL").setValue(0);
 		}
 	}
 }

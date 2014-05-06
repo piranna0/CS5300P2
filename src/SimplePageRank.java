@@ -12,7 +12,7 @@ import org.apache.hadoop.util.*;
 public class SimplePageRank 
 {	
 	public static enum MY_COUNTERS {
-		BLAH
+		RESIDUAL
 	};
 
 	static int N = 685230; //Number of nodes
@@ -116,8 +116,8 @@ public class SimplePageRank
 
 			output.collect(key, constructValue(pageRankTotal, outlinks));
 			
-			// increment iteration counter
-			reporter.getCounter(MY_COUNTERS.BLAH).increment((long)(pageRankTotal * 10000));
+			// residual counter
+			reporter.getCounter(MY_COUNTERS.RESIDUAL).increment((long)(pageRankTotal * 10000));
 		}
 	}
 
@@ -133,7 +133,7 @@ public class SimplePageRank
 		conf.setCombinerClass(Reduce.class);
 		conf.setReducerClass(Reduce.class);
 
-		conf.setInputFormat(TextInputFormat.class);
+		conf.setInputFormat(KeyValueTextInputFormat.class);
 		conf.setOutputFormat(TextOutputFormat.class);
 
 		// TODO: input and output paths should be s3
@@ -145,7 +145,7 @@ public class SimplePageRank
 
 		// get counters
 		Counters c = rj.getCounters();
-		long counter = c.getCounter(MY_COUNTERS.BLAH);
+		long counter = c.getCounter(MY_COUNTERS.RESIDUAL);
 
 		// write counter values to an output file
 		try 

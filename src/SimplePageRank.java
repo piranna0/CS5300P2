@@ -61,9 +61,9 @@ public class SimplePageRank
 	//u;PR(u)_v_w_x...
 	// input: <<outlink, rank>, list of inlinks>
 	// output (for each inlink): <inlink, <outlink, rank>>
-	public static class Map extends MapReduceBase implements Mapper<LongWritable, Text, LongWritable, Text> 
+	public static class Map extends MapReduceBase implements Mapper<Text, Text, Text, Text> 
 	{		
-		public void map(LongWritable key, Text value, OutputCollector<LongWritable, Text> output, Reporter reporter) throws IOException 
+		public void map(Text key, Text value, OutputCollector<Text, Text> output, Reporter reporter) throws IOException 
 		{
 			// extract from value
 			Tuple<Double, int[]> parsed_value = parseValue(value);
@@ -74,8 +74,8 @@ public class SimplePageRank
 			// reverse links and emit 
 			for (int i = 0; i < N; i++)
 			{
-				LongWritable writable_outlink = new LongWritable(outlinks[i]);
-				output.collect(writable_outlink, constructValue(pagerank / N, null_array));
+				Text text_outlink = new Text(Integer.toString(outlinks[i]));
+				output.collect(text_outlink, constructValue(pagerank / N, null_array));
 			}
 
 			// emit the set of outlinks
@@ -83,9 +83,9 @@ public class SimplePageRank
 		}
 	}
 
-	public static class Reduce extends MapReduceBase implements Reducer<LongWritable, Text, LongWritable, Text> 
+	public static class Reduce extends MapReduceBase implements Reducer<Text, Text, Text, Text> 
 	{
-		public void reduce(LongWritable key, Iterator<Text> values, OutputCollector<LongWritable, Text> output, Reporter reporter) throws IOException 
+		public void reduce(Text key, Iterator<Text> values, OutputCollector<Text, Text> output, Reporter reporter) throws IOException 
 		{
 			Text v;
 			double pagerank;
@@ -127,13 +127,14 @@ public class SimplePageRank
 		conf.setJobName("wordcount");
 
 		conf.setOutputKeyClass(Text.class);
-		conf.setOutputValueClass(IntWritable.class);
+		conf.setOutputValueClass(Text.class);
 
 		conf.setMapperClass(Map.class);
 		conf.setCombinerClass(Reduce.class);
 		conf.setReducerClass(Reduce.class);
 
 		conf.setInputFormat(KeyValueTextInputFormat.class);
+		conf.set("mapreduce.input.keyvaluelinerecordreader.key.value.separator", ";");
 		conf.setOutputFormat(TextOutputFormat.class);
 
 		// TODO: input and output paths should be s3

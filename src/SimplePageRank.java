@@ -16,10 +16,10 @@ public class SimplePageRank
 		RESIDUAL
 	};
 
-	//static int N = 685230; //Number of nodes
-	static int N = 5; //Number of nodes
+	static int N = 685230; //Number of nodes
+//	static int N = 5; //Number of nodes
 	static double d = .85; //Damping factor
-	private static int NUM_PASSES = 4;	// number of passes of mapreduce
+	private static int NUM_PASSES = 5;	// number of passes of mapreduce
 	private static int[] null_array = new int[0];
 
 	public static class Tuple<X, Y> 

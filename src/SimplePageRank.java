@@ -1,4 +1,5 @@
 import java.io.FileNotFoundException;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.*;
@@ -18,7 +19,7 @@ public class SimplePageRank
 	//static int N = 685230; //Number of nodes
 	static int N = 5; //Number of nodes
 	static double d = .85; //Damping factor
-	private static int NUM_PASSES = 5;	// number of passes of mapreduce
+	private static int NUM_PASSES = 4;	// number of passes of mapreduce
 	private static int[] null_array = new int[0];
 
 	public static class Tuple<X, Y> 
@@ -67,17 +68,23 @@ public class SimplePageRank
 	{		
 		public void map(Text key, Text value, OutputCollector<Text, Text> output, Reporter reporter) throws IOException 
 		{
+			PrintWriter writer = new PrintWriter("MapEmit" + key.toString() + ".txt");
 			// extract from value
 			Tuple<Double, int[]> parsed_value = parseValue(value);
 			double pagerank = parsed_value.x;
 			int[] outlinks = parsed_value.y;
 			double N = outlinks.length;
 
-			// reverse links and emit 
-			for (int i = 0; i < N; i++)
-			{
-				Text text_outlink = new Text(Integer.toString(outlinks[i]));
-				output.collect(text_outlink, constructValue(pagerank / N, null_array));
+			if(outlinks[0] != -1){
+				// reverse links and emit 
+				for (int i = 0; i < N; i++)
+				{
+					Text text_outlink = new Text(Integer.toString(outlinks[i]));
+					output.collect(text_outlink, constructValue(pagerank / N, null_array));
+					writer.write(Integer.toString(outlinks[i]) + "->");
+					writer.write(constructValue(pagerank / N, null_array).toString() + "\n");
+				}
+				writer.close();
 			}
 
 			// emit the set of outlinks
@@ -96,7 +103,7 @@ public class SimplePageRank
 			int[] outlinks = new int[0];
 			int numInlinks = 0;
 			double pageRankSum = 0;
-
+			PrintWriter writer = new PrintWriter(new FileWriter("MapReduce" + key.toString() + ".txt", true));
 			// extract from values
 			while (values.hasNext())
 			{
@@ -105,9 +112,10 @@ public class SimplePageRank
 				pagerank = parsed_value.x;
 				links = parsed_value.y;
 				numInlinks = links.length;
-
+				writer.write(v.toString() + "\n");
 				if (numInlinks == 0) // if v is an inlink, accumulate its pagerank
 				{
+//					writer.write(Double.toString(pagerank) + "\n");
 					pageRankSum += pagerank;
 				}
 				else // otherwise, it's the list of outlinks
@@ -116,6 +124,7 @@ public class SimplePageRank
 					outlinks = links;
 				}
 			}
+			writer.close();
 			double pageRankTotal = ((1-d) / N) + (pageRankSum * d);
 
 			output.collect(key, constructValue(pageRankTotal, outlinks));
@@ -135,7 +144,7 @@ public class SimplePageRank
 		conf.setOutputValueClass(Text.class);
 
 		conf.setMapperClass(Map.class);
-		conf.setCombinerClass(Reduce.class);
+//		conf.setCombinerClass(Reduce.class);
 		conf.setReducerClass(Reduce.class);
 
 		conf.setInputFormat(KeyValueTextInputFormat.class);
@@ -146,7 +155,7 @@ public class SimplePageRank
 		// run the job
 		RunningJob rj = null;
 		Path prevPath = null;
-		long[] avg_residuals = new long[NUM_PASSES];	// stores the residuals for each pass (index = pass number)
+		double[] avg_residuals = new double[NUM_PASSES];	// stores the residuals for each pass (index = pass number)
 		for (int i = 0; i < NUM_PASSES; i++)
 		{
 			// TODO: input and output paths should be s3
@@ -169,7 +178,7 @@ public class SimplePageRank
 			
 			// read from counters
 			Counters c = rj.getCounters();
-			long residual_counter = c.getCounter(MY_COUNTERS.RESIDUAL) / (long)10000;
+			double residual_counter = c.getCounter(MY_COUNTERS.RESIDUAL) / 10000.;
 			avg_residuals[i] = residual_counter / N;
 		}
 		
@@ -179,7 +188,7 @@ public class SimplePageRank
 			PrintWriter writer = new PrintWriter("simplepagerank_output.txt");
 			for (int i = 0; i < NUM_PASSES; i++)
 			{
-				writer.write("Iteration " + Integer.toString(i) + " avg residual " + Long.toString(avg_residuals[i]) + '\n');
+				writer.write("Iteration " + Integer.toString(i) + " avg residual " + Double.toString(avg_residuals[i]) + '\n');
 			}
 			writer.close();
 		} 

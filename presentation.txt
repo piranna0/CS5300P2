@@ -1,0 +1,48 @@
+PageRank using AWS Elastic MapReduce
+
+The goal of this project was to deploy a MapReduce cluster on AWS that can calculate the PageRanks of web pages in a Web graph. 
+This is achieved primarily by overwriting the map and reduce methods in Apache's Hadoop libraries. 
+
+There are two different approaches we take: simple PageRank and blocked PageRank.
+Both run through multiple phases of MapReduce to converge on accurate PageRank values. 
+However, the latter approach is an improvement on the former that gives us faster convergence.
+
+We'll start with simple PageRank, which is a node-by-node approach.
+In other words, single nodes are passed through MapReduce phases and PageRanks are calculated individually for each node.
+To gauge how quickly (rather, how slowly) simple PageRank converges, we calculate the average of the residuals for each node for each phase.
+The residual of a node is simply the normalized difference between the node's PageRank value from the previous phase and the current phase. 
+To measure convergence, we see how quickly the average residual decreases through MapReduce phases.
+
+Simple PageRank Implementation:
+- mappers and reducers both have input and output types Text key ; Text value
+- key is node number
+- value is a string containing the node's PageRank value and outgoing nodes, all delimited by "_"
+- so to pass values between mappers and reducers, we parse the PageRank and outgoing nodes out of the value field. 
+- map inputs/ reducer outputs:
+  - todo
+- map outputs/ reducer inputs:
+  - todo
+- Hadoop Counters approach to accumulate the average residuals
+
+Results and Discussion:
+- avg residual decreases slowly -> slow convergence
+- todo
+
+In blocked PageRank, the Web graph is partitioned into blocks of nodes where every node is in a block. 
+Map is similar to simple w/ different input/outputs
+Reduce performs multiple PageRank iterations for each block until the residual error falls below a threshold.
+After each MapReduce phase, sum all the residuals of each block and see if it falls below an error bound to check for convergence.
+
+Blocked PageRank Implementation:
+- mappers and reducers both have input and output types Text key ; Text value
+- key is block number
+- value is a string containing a node number, which block the node came from (if applicable), the PageRank of the node, and the lists of 
+outlink nodes and their corresponding blocks, all delimited by "_".
+- parsing/ constructing value fields same as in simple PageRank.
+- map inputs/ reducer outputs:
+  - todo
+- map outputs/ reducer inputs:
+  - todo
+
+Results and Discussion:
+- todo

@@ -3,12 +3,9 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.*;
-
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.conf.*;
 import org.apache.hadoop.io.*;
 import org.apache.hadoop.mapred.*;
-import org.apache.hadoop.util.*;
 
 public class BlockedPageRank 
 {	
@@ -18,6 +15,7 @@ public class BlockedPageRank
 
 	static int N = 685230; //Number of nodes
 	static double d = .85; //Damping factor
+	static double THRESHOLD = .001; //BlockedPageRank Reduce stopping criterion
 	private static int[] null_array = new int[0];
 
 	public static class Tuple<X, Y> 
@@ -31,14 +29,14 @@ public class BlockedPageRank
 		} 
 	} 
 	
-	public static class Fiveple<V,W,X,Y,Z> 
+	public static class Fiveple
 	{ 
-		public final V v;
-		public final W w; 
-		public final X x; 
-		public final Y y; 
-		public final Z z;
-		public Fiveple(V v, W w, X x, Y y, Z z) 
+		public final int v;
+		public final int w; 
+		public double x;
+		public final int[] y; 
+		public final int[] z;
+		public Fiveple(int v, int w, double x, int[] y, int[] z) 
 		{  
 			this.v = v;
 			this.w = w;
@@ -46,10 +44,14 @@ public class BlockedPageRank
 			this.y = y;
 			this.z = z;
 		} 
+		@Override
+		public String toString() {
+			return v+" "+w+" "+x+" "+y+" "+z;
+		}
 	}
 
 	// parses the raw Text input values
-	public static Fiveple<Integer, Integer, Double, int[], int[]> parseValue(Text value)
+	public static Fiveple parseValue(Text value)
 	{
 		String[] parts = value.toString().split("_");
 		Integer node = Integer.parseInt(parts[0]);
@@ -76,13 +78,17 @@ public class BlockedPageRank
 			outlink_nodes[0] = -1;
 		}
 
-		return new Fiveple<Integer, Integer, Double, int[], int[]>(node, fromBlock, pagerank, outlink_blocks, outlink_nodes);
+		return new Fiveple(node, fromBlock, pagerank, outlink_blocks, outlink_nodes);
 	}
 
 	// constructs the raw Text value
-	public static Text constructValue(Text node, int block, double pr, int[] outlink_blocks, int[] outlink_nodes)
+	public static Text constructValue(Text node, Integer block, Double pr, int[] outlink_blocks, int[] outlink_nodes)
 	{
-		String s = node + "_" + Integer.toString(block) + "_" + Double.toString(pr);
+		String s = node + "_" + block.toString() + "_" + pr.toString();
+		if (outlink_blocks.length==0) {
+			return new Text(s+"_-1");
+		}
+
 		for (int i = 0; i < outlink_blocks.length; i++)
 		{
 			s += "_" + outlink_blocks[i] + "~" + outlink_nodes[i];
@@ -98,12 +104,12 @@ public class BlockedPageRank
 	{		
 		public void map(Text key, Text value, OutputCollector<Text, Text> output, Reporter reporter) throws IOException 
 		{
-			PrintWriter writer = new PrintWriter("MapEmit" + key.toString() + ".txt");
+//			PrintWriter writer = new PrintWriter("MapEmit" + key.toString() + ".txt");
 			// extract values
 			int block = Integer.parseInt(key.toString());
-			Fiveple<Integer, Integer, Double, int[], int[]> parsed_value = parseValue(value);
-			int node = parsed_value.v;
-			int from_block = parsed_value.w;
+			Fiveple parsed_value = parseValue(value);
+//			int node = parsed_value.v;
+//			int from_block = parsed_value.w;
 			double pagerank = parsed_value.x;
 			int[] outlink_blocks = parsed_value.y;
 			int[] outlink_nodes = parsed_value.z;
@@ -118,7 +124,7 @@ public class BlockedPageRank
 					Text text_outlink_node = new Text(Integer.toString(outlink_nodes[i]));
 					output.collect(text_outlink_block, constructValue(text_outlink_node, block, pagerank / N, null_array, null_array));
 				}
-				writer.close();
+//				writer.close();
 			}
 
 			// emit the set of outlinks
@@ -133,56 +139,112 @@ public class BlockedPageRank
 	{
 		public void reduce(Text key, Iterator<Text> values, OutputCollector<Text, Text> output, Reporter reporter) throws IOException 
 		{
-			Text v;
 			int block = Integer.parseInt(key.toString());
-			int node = -1;
-			int from_block;
-			double pagerank;
-			double pagerankPrev = 0;
-			int[] outlink_blocks = null;
-			int[] outlink_nodes = null;
-			int[] new_outlink_blocks = new int[0];
-			int[] new_outlink_nodes = new int[0];
-			int numInlinks = 0;
-			double pageRankSum = 0;
-			
-			// extract from values
-			while (values.hasNext())
-			{
-				v = values.next();
-				Fiveple<Integer, Integer, Double, int[], int[]> parsed_value = parseValue(v);
-				node = parsed_value.v;
-				from_block = parsed_value.w;
-				pagerank = parsed_value.x;
-				outlink_blocks = parsed_value.y;
-				outlink_nodes = parsed_value.z;
-				numInlinks = outlink_blocks.length;
-				
-				if (numInlinks == 0) // if v is an inlink
-				{
-					pageRankSum += pagerank;
+			// nodes with lists of outlinks used to emit
+			ArrayList<Fiveple> out_nodes = new ArrayList<Fiveple>();
+			HashMap<Integer, Double> constantPR = new HashMap<Integer,Double>(); // from outside the block
+			HashMap<Integer, Double> changingPR = new HashMap<Integer,Double>(); //from inside the block
+			HashMap<Integer, Double> initialPR = new HashMap<Integer,Double>(); //for final residual
+
+			while (values.hasNext()) {
+				Text v = values.next();
+				Fiveple parsed_value = parseValue(v);
+				int[] outlink_blocks = parsed_value.y;
+				int from_block = parsed_value.w;
+				double pagerank = parsed_value.x;
+				int node = parsed_value.v;
+
+				if (outlink_blocks[0] != -1) { // v is an inlink
+					out_nodes.add(parsed_value);
+					initialPR.put(node, pagerank);
+				} else {
+					double sum = 0;
+					if (from_block==block) { //from inside the block: changing
+						if (changingPR.get(node)!=null) {
+							sum = changingPR.get(node);
+						}
+						changingPR.put(node,pagerank+sum);
+					} else { // from outside the block: constant
+						if (constantPR.get(node)!=null) {
+							sum = constantPR.get(node);
+						}
+						constantPR.put(node, pagerank+sum);
+					}
 				}
-				else // otherwise, it's the list of outlinks
-				{
-					pagerankPrev = pagerank;
-					new_outlink_blocks = outlink_blocks;
-					new_outlink_nodes = outlink_nodes;
-				}
+		
 			}
-			double pageRankTotal = ((1-d) / N) + (pageRankSum * d);
 
-			output.collect(key, constructValue(new Text(Integer.toString(node)), -1, pageRankTotal, outlink_blocks, outlink_nodes));
+			int num_nodes_in_block = out_nodes.size();
 
-			// calculate residual and increment counter
-			double residual = (Math.abs(pagerankPrev - pageRankTotal) / pageRankTotal) * 10000;
-			reporter.getCounter(MY_COUNTERS.RESIDUAL).increment((long)residual);
+			double total_residual = Double.MAX_VALUE;
+
+			while (total_residual/num_nodes_in_block > THRESHOLD) {
+				total_residual = 0;
+				// the next changingPR
+				HashMap<Integer, Double> changingPRNext = new HashMap<Integer,Double>(num_nodes_in_block);
+
+				for (Fiveple node_fiveple : out_nodes) {
+					// for all nodes in block:
+					int node = node_fiveple.v;
+					double pagerankPrev = node_fiveple.x;
+					int[] outlink_blocks = node_fiveple.y;
+					int[] outlink_nodes = node_fiveple.z;
+
+					//calculate pagerank
+					double changingContribution = 0;
+					double constantContribution = 0;
+					if (constantPR.get(node)!= null) changingContribution = constantPR.get(node);
+					if (changingPR.get(node)!= null) changingContribution = changingPR.get(node);
+					double pageRankTotal = ((1-d) / N) + ((constantContribution+changingContribution) * d);
+					
+					//calculate residuals
+					double residual = (Math.abs(pagerankPrev - pageRankTotal) / pageRankTotal);
+					total_residual += residual;
+
+					//update pageranks
+					node_fiveple.x = pageRankTotal;
+					for (int i=0; i<outlink_nodes.length; i++) {
+						if (outlink_blocks[i]==block) {
+							double sum = 0;
+							if (changingPRNext.get(outlink_nodes[i])!=null) {
+								sum = changingPRNext.get(outlink_nodes[i]);
+							}
+							changingPRNext.put(outlink_nodes[i], sum + pageRankTotal/outlink_blocks.length);
+						}
+					}
+				}
+				changingPR = changingPRNext;
+//				PrintWriter writer = new PrintWriter(new FileWriter("./output/Intermediate" + key.toString() + ".txt", true));
+//				writer.write("block: " + block + " resid: " + total_residual/num_nodes_in_block + "\n");
+//				writer.write("total_resid: " + total_residual+ "\n");
+//				writer.close();
+			}
+
+			total_residual = 0;
+			for (Fiveple node_fiveple : out_nodes) {
+				// for all nodes in block, emit
+				Integer node = node_fiveple.v;
+				double pagerank = node_fiveple.x;
+				double residual = (Math.abs(initialPR.get(node) - pagerank) / pagerank);
+				total_residual += residual;
+				int[] outlink_blocks = node_fiveple.y;
+				int[] outlink_nodes = node_fiveple.z;
+				output.collect(key, constructValue(new Text(node.toString()), -1, pagerank, outlink_blocks, outlink_nodes));
+			}
+			
+			reporter.getCounter(MY_COUNTERS.RESIDUAL).increment((long)total_residual*1000);
+
+			PrintWriter writer = new PrintWriter(new FileWriter("./output/Reduce" + key.toString() + ".txt", true));
+			writer.write("block: " + block + " resid: " + total_residual/num_nodes_in_block + "\n");
+			writer.close();
+
 		}
 	}
 
 	public static void main(String[] args) throws Exception 
 	{
-		JobConf conf = new JobConf(SimplePageRank.class);
-		conf.setJobName("wordcount");
+		JobConf conf = new JobConf(BlockedPageRank.class);
+		conf.setJobName("blockedpagerank");
 
 		conf.setOutputKeyClass(Text.class);
 		conf.setOutputValueClass(Text.class);
@@ -198,8 +260,10 @@ public class BlockedPageRank
 		// run the job
 		RunningJob rj = null;
 		Path prevPath = null;
-		double[] avg_residuals = new double[NUM_PASSES];	// stores the residuals for each pass (index = pass number)
-		for (int i = 0; i < NUM_PASSES; i++)
+		ArrayList<Double> avg_residuals = new ArrayList<Double>();
+		double last_residual = Double.MAX_VALUE;
+		int i = 0;
+		while (last_residual > THRESHOLD)
 		{
 			// TODO: input and output paths should be s3
 			// input path
@@ -213,7 +277,7 @@ public class BlockedPageRank
 			}
 			
 			// output path
-			prevPath = new Path("./simplepagerank_output" + Integer.toString(i));
+			prevPath = new Path("./blockedpagerank_output" + Integer.toString(i));
 			FileOutputFormat.setOutputPath(conf, prevPath);
 			
 			// run job
@@ -222,16 +286,21 @@ public class BlockedPageRank
 			// read from counters
 			Counters c = rj.getCounters();
 			double residual_counter = c.getCounter(MY_COUNTERS.RESIDUAL) / 10000.;
-			avg_residuals[i] = residual_counter / N;
+			avg_residuals.add(residual_counter / N);
+			last_residual = residual_counter/N;
+			i+=1;
 		}
 		
 		// write avg_residual values to an output file
 		try 
 		{
-			PrintWriter writer = new PrintWriter("simplepagerank_output.txt");
-			for (int i = 0; i < NUM_PASSES; i++)
+			PrintWriter writer = new PrintWriter("blockedpagerank_output.txt");
+//			for (int i = 0; i < NUM_PASSES; i++)
+			i = 0;
+			for (double r : avg_residuals)
 			{
-				writer.write("Iteration " + Integer.toString(i) + " avg residual " + Double.toString(avg_residuals[i]) + '\n');
+				writer.write("Iteration " + Integer.toString(i) + " avg residual " + Double.toString(r) + '\n');
+				i+=1;
 			}
 			writer.close();
 		} 

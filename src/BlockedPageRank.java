@@ -1,6 +1,8 @@
+import java.io.ByteArrayInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintWriter;
 import java.util.*;
 
@@ -9,6 +11,12 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.*;
 import org.apache.hadoop.mapred.*;
+
+import com.amazonaws.auth.ClasspathPropertiesFileCredentialsProvider;
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.AmazonS3Client;
+import com.amazonaws.services.s3.model.ObjectMetadata;
+import com.amazonaws.services.s3.model.PutObjectRequest;
 
 public class BlockedPageRank 
 {	
@@ -243,10 +251,39 @@ public class BlockedPageRank
 
 		}
 	}
+	
+	public static void writeS3(String bucket, String key, String message){
+		AmazonS3 s3 = new AmazonS3Client(new ClasspathPropertiesFileCredentialsProvider());
+//		GetObjectRequest getObject = new GetObjectRequest(bucket, key);
+//		S3Object object = s3.getObject(getObject);
+		byte[] bytes = message.getBytes();
+		InputStream is = new ByteArrayInputStream(bytes);
+		ObjectMetadata meta = new ObjectMetadata();
+		meta.setContentLength(bytes.length);
+		PutObjectRequest putObject = new PutObjectRequest(bucket, key, is, meta);
+		s3.putObject(putObject);
+		
+	}
 
 	public static void main(String[] args) throws Exception 
 	{
-		String bucketName = "edu-cornell-cs-cs5300s14-jkf49";
+		String bucket = "";
+		String inputKey = "";
+		String outputDirectory = "";
+		String finalOutputKey = "";
+		if(args.length < 4){
+			bucket = "edu-cornell-cs-cs5300s14-jkf49";
+			inputKey = "/blockinput/";
+			outputDirectory = "./blockedpagerank_output";
+			finalOutputKey = "blockedResiduals.txt";
+		}
+		else{
+			bucket = args[0];
+			inputKey = args[1];
+			outputDirectory = args[2];
+			finalOutputKey = args[3];
+		}
+		
 		JobConf conf = new JobConf(BlockedPageRank.class);
 		conf.setJobName("blockedpagerank");
 
@@ -267,13 +304,13 @@ public class BlockedPageRank
 		ArrayList<Double> avg_residuals = new ArrayList<Double>();
 		double last_residual = Double.MAX_VALUE;
 		int i = 0;
-		while (last_residual > THRESHOLD)
-		{
+//		while (last_residual > THRESHOLD)
+//		{
 			// TODO: input and output paths should be s3
 			// input path
 			if (i == 0)
 			{
-				FileInputFormat.setInputPaths(conf, new Path("s3n://" + bucketName + "/blockinput/"));
+				FileInputFormat.setInputPaths(conf, new Path("s3n://" + bucket + inputKey));
 			}
 			else
 			{
@@ -282,7 +319,7 @@ public class BlockedPageRank
 			
 			// output path
 			FileSystem fs = FileSystem.get(new Configuration());
-			prevPath = new Path("./blockedpagerank_output" + Integer.toString(i));
+			prevPath = new Path(outputDirectory + Integer.toString(i));
 			fs.delete(prevPath, true);
 			FileOutputFormat.setOutputPath(conf, prevPath);
 			
@@ -295,24 +332,33 @@ public class BlockedPageRank
 			avg_residuals.add(residual_counter / N);
 			last_residual = residual_counter/N;
 			i+=1;
+//		}
+		
+		StringBuffer buf = new StringBuffer();
+		i=0;
+		for (double r : avg_residuals){
+			buf.append("Iteration " + Integer.toString(i) + " avg residual " + Double.toString(r) + '\n');
+			i++;
 		}
 		
+		writeS3(bucket, finalOutputKey, buf.toString());
+		
 		// write avg_residual values to an output file
-		try 
-		{
-			PrintWriter writer = new PrintWriter("blockedpagerank_output.txt");
-//			for (int i = 0; i < NUM_PASSES; i++)
-			i = 0;
-			for (double r : avg_residuals)
-			{
-				writer.write("Iteration " + Integer.toString(i) + " avg residual " + Double.toString(r) + '\n');
-				i+=1;
-			}
-			writer.close();
-		} 
-		catch (FileNotFoundException e)
-		{
-			e.printStackTrace();
-		}
+//		try 
+//		{
+//			PrintWriter writer = new PrintWriter("blockedpagerank_output.txt");
+////			for (int i = 0; i < NUM_PASSES; i++)
+//			i = 0;
+//			for (double r : avg_residuals)
+//			{
+//				writer.write("Iteration " + Integer.toString(i) + " avg residual " + Double.toString(r) + '\n');
+//				i+=1;
+//			}
+//			writer.close();
+//		} 
+//		catch (FileNotFoundException e)
+//		{
+//			e.printStackTrace();
+//		}
 	}
 }

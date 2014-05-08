@@ -259,6 +259,7 @@ public class BlockedPageRank
 	
 	public static void writeS3(String bucket, String key, String message){
 		AmazonS3 s3 = new AmazonS3Client(new BasicAWSCredentials("AKIAIQJUZCRBWBDPMNTQ","1icMGeE13StjnE7pSLpDHd0d6s8mOa+PKZpGXwHo"));
+//		AmazonS3 s3 = new AmazonS3Client(new ClasspathPropertiesFileCredentialsProvider());
 //		GetObjectRequest getObject = new GetObjectRequest(bucket, key);
 //		S3Object object = s3.getObject(getObject);
 		byte[] bytes = message.getBytes();

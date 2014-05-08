@@ -2,6 +2,16 @@ Ansha Yu ay226
 Gene Shin gws55
 Jimmy Feher jkf49
 
+Running details:
+BlockedPagerank has a number of fields. These can be input using 4 arguments in this order
+String bucket; //S3 bucket
+String inputKey; //S3 path
+String outputDirectory; //Filepath, not S3
+String finalOutputKey; //S3 path
+
+In the method writeS3, you must put your own public and secret key. We had trouble using the AwsCredentials.properties file on 
+aws mapreduce.
+
 PageRank using AWS Elastic MapReduce
 
 Simple PageRank

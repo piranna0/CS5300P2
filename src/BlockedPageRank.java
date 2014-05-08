@@ -3,6 +3,9 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.*;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.*;
 import org.apache.hadoop.mapred.*;
@@ -243,6 +246,7 @@ public class BlockedPageRank
 
 	public static void main(String[] args) throws Exception 
 	{
+		String bucketName = "edu-cornell-cs-cs5300s14-jkf49";
 		JobConf conf = new JobConf(BlockedPageRank.class);
 		conf.setJobName("blockedpagerank");
 
@@ -269,7 +273,7 @@ public class BlockedPageRank
 			// input path
 			if (i == 0)
 			{
-				FileInputFormat.setInputPaths(conf, new Path(args[0]));
+				FileInputFormat.setInputPaths(conf, new Path("s3n://" + bucketName + "/blockinput/"));
 			}
 			else
 			{
@@ -277,7 +281,9 @@ public class BlockedPageRank
 			}
 			
 			// output path
+			FileSystem fs = FileSystem.get(new Configuration());
 			prevPath = new Path("./blockedpagerank_output" + Integer.toString(i));
+			fs.delete(prevPath, true);
 			FileOutputFormat.setOutputPath(conf, prevPath);
 			
 			// run job

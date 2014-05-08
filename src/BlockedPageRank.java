@@ -193,7 +193,7 @@ public class BlockedPageRank
 					//calculate pagerank
 					double changingContribution = 0;
 					double constantContribution = 0;
-					if (constantPR.get(node)!= null) changingContribution = constantPR.get(node);
+					if (constantPR.get(node)!= null) constantContribution = constantPR.get(node);
 					if (changingPR.get(node)!= null) changingContribution = changingPR.get(node);
 					double pageRankTotal = ((1-d) / N) + ((constantContribution+changingContribution) * d);
 					
@@ -232,7 +232,7 @@ public class BlockedPageRank
 				output.collect(key, constructValue(new Text(node.toString()), -1, pagerank, outlink_blocks, outlink_nodes));
 			}
 			
-			reporter.getCounter(MY_COUNTERS.RESIDUAL).increment((long)total_residual*1000);
+			reporter.getCounter(MY_COUNTERS.RESIDUAL).increment((long)total_residual*10000);
 
 			PrintWriter writer = new PrintWriter(new FileWriter("./output/Reduce" + key.toString() + ".txt", true));
 			writer.write("block: " + block + " resid: " + total_residual/num_nodes_in_block + "\n");

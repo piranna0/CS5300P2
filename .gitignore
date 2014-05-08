@@ -3,6 +3,7 @@
 *.classpath
 edges_simple.txt
 edges_simple_example.txt
+.settings/
 
 # Mobile Tools for Java (J2ME)
 .mtj.tmp/

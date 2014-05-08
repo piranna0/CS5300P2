@@ -1,25 +1,13 @@
-import java.io.ByteArrayInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.PrintWriter;
 import java.util.*;
-
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.*;
 import org.apache.hadoop.mapred.*;
 
-import com.amazonaws.auth.BasicAWSCredentials;
-import com.amazonaws.auth.ClasspathPropertiesFileCredentialsProvider;
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.AmazonS3Client;
-import com.amazonaws.services.s3.model.ObjectMetadata;
-import com.amazonaws.services.s3.model.PutObjectRequest;
-
-public class BlockedPageRank 
+public class RandomPageRank 
 {	
 	public static enum MY_COUNTERS {
 		RESIDUAL, ITERATIONS
@@ -30,6 +18,7 @@ public class BlockedPageRank
 	static double THRESHOLD = .001; //BlockedPageRank Reduce stopping criterion
 	static final int NUM_BLOCKS = 68; 
 	private static int[] null_array = new int[0];
+	static final int NUM_PASSES = 6;
 
 	public static class Tuple<X, Y> 
 	{ 
@@ -256,41 +245,11 @@ public class BlockedPageRank
 
 		}
 	}
-	
-	public static void writeS3(String bucket, String key, String message){
-		AmazonS3 s3 = new AmazonS3Client(new BasicAWSCredentials("AKIAIQJUZCRBWBDPMNTQ","1icMGeE13StjnE7pSLpDHd0d6s8mOa+PKZpGXwHo"));
-//		GetObjectRequest getObject = new GetObjectRequest(bucket, key);
-//		S3Object object = s3.getObject(getObject);
-		byte[] bytes = message.getBytes();
-		InputStream is = new ByteArrayInputStream(bytes);
-		ObjectMetadata meta = new ObjectMetadata();
-		meta.setContentLength(bytes.length);
-		PutObjectRequest putObject = new PutObjectRequest(bucket, key, is, meta);
-		s3.putObject(putObject);
-		
-	}
 
 	public static void main(String[] args) throws Exception 
 	{
-		String bucket = "";
-		String inputKey = "";
-		String outputDirectory = "";
-		String finalOutputKey = "";
-		if(args.length < 4){
-			bucket = "edu-cornell-cs-cs5300s14-jkf49";
-			inputKey = "/blockinput/";
-			outputDirectory = "./blockedpagerank_output";
-			finalOutputKey = "blockedResiduals.txt";
-		}
-		else{
-			bucket = args[0];
-			inputKey = args[1];
-			outputDirectory = args[2];
-			finalOutputKey = args[3];
-		}
-		
-		JobConf conf = new JobConf(BlockedPageRank.class);
-		conf.setJobName("blockedpagerank");
+		JobConf conf = new JobConf(RandomPageRank.class);
+		conf.setJobName("randompagerank");
 
 		conf.setOutputKeyClass(Text.class);
 		conf.setOutputValueClass(Text.class);
@@ -309,14 +268,15 @@ public class BlockedPageRank
 		ArrayList<Double> avg_residuals = new ArrayList<Double>();
 		ArrayList<Double> iterations_arr = new ArrayList<Double>(); 
 		double last_residual = Double.MAX_VALUE;
-		int i = 0;
+//		int i = 0;
 //		while (last_residual > THRESHOLD)
-//		{
+		for (int i = 0; i < NUM_PASSES; i++)
+		{
 			// TODO: input and output paths should be s3
 			// input path
 			if (i == 0)
 			{
-				FileInputFormat.setInputPaths(conf, new Path("s3n://" + bucket + inputKey));
+				FileInputFormat.setInputPaths(conf, new Path(args[0]));
 			}
 			else
 			{
@@ -324,9 +284,7 @@ public class BlockedPageRank
 			}
 			
 			// output path
-//			FileSystem fs = FileSystem.get(new Configuration());
-			prevPath = new Path(outputDirectory + Integer.toString(i));
-//			fs.delete(prevPath, true);
+			prevPath = new Path("./randompagerank_output" + Integer.toString(i));
 			FileOutputFormat.setOutputPath(conf, prevPath);
 			
 			// run job
@@ -339,32 +297,22 @@ public class BlockedPageRank
 			iterations_arr.add(iterations);
 			avg_residuals.add(residual_counter / N);
 			last_residual = residual_counter/N;
-			i+=1;
-//		}
-		
-		StringBuffer buf = new StringBuffer();
-		i=0;
-		for (double r : avg_residuals){
-			buf.append("Iteration " + Integer.toString(i) + " avg residual " + Double.toString(r) + '\n');
-			i++;
 		}
 		
-		writeS3(bucket, finalOutputKey, buf.toString());
-		
 		// write avg_residual values to an output file
-//		try 
-//		{
-//			PrintWriter writer = new PrintWriter("blockedpagerank_output.txt");
-//			for (int j=0; j<avg_residuals.size(); j++)
-//			{
-//				writer.write("Iteration " + Integer.toString(j) + " avg residual " + Double.toString(avg_residuals.get(j)) + '\n');
-//				writer.write("            avg iterations " + Double.toString(iterations_arr.get(j)) + '\n');
-//			}
-//			writer.close();
-//		} 
-//		catch (FileNotFoundException e)
-//		{
-//			e.printStackTrace();
-//		}
+		try 
+		{
+			PrintWriter writer = new PrintWriter("randompagerank_output.txt");
+			for (int j=0; j<avg_residuals.size(); j++)
+			{
+				writer.write("Iteration " + Integer.toString(j) + " avg residual " + Double.toString(avg_residuals.get(j)) + '\n');
+				writer.write("            avg iterations " + Double.toString(iterations_arr.get(j)) + '\n');
+			}
+			writer.close();
+		} 
+		catch (FileNotFoundException e)
+		{
+			e.printStackTrace();
+		}
 	}
 }

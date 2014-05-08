@@ -8,6 +8,12 @@ Simple PageRank
 - Mappers and reducers both have the following input/output types 
   - Key is node number of type Text
   - Value is a string (type Text) containing the node's PageRank value and outgoing nodes, all delimited by "_“.
+- Map input: 
+  <u;PR(u)_{v | u->v}>
+- Map outputs/ Reducer input: 
+  <u;PR(u)_{v | u->v}>, <{v;PR(u)/N_-1} | u->v>
+- Reducer output: 
+  <v;Prnew(v)_{w | v->w}>
 - To pass values between mappers and reducers, we construct a value string (the node’s PageRank and outgoing nodes) when emitting.
 - When a mapper or reducer receives it, it can parse them out of the string.
 - Hadoop Counters approach to accumulate the average residuals.
@@ -22,6 +28,12 @@ Blocked PageRank
 - Mappers and reducers both have the following input/output types 
 - Key is block number of type Text
 - Value is a string (type Text) containing a node number, which block the node came from (if applicable), the PageRank of the node, and the lists of outlink nodes and their corresponding blocks, all delimited by "_".
+- Map input: 
+  <b(u);u_-1_PR(u)_{b(v)~v | u->v}>
+- Map outputs/ Reducer input: 
+  <b(u);u_-1_PR(u)_{b(v)~v | u->v}>, <b(v);v_b(u)_PR(u)/N_-1>
+- Reducer output: 
+  <b(u);u_-1_PR(u)_{b(v)~v | u->v}>
 - Parsing and constructing the string value fields is done the same way as in Simple PageRank.
 - Two Counters: one for the residuals, and another for the number of PageRank iterations per reduce task.
 

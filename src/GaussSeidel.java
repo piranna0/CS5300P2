@@ -10,7 +10,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.*;
 import org.apache.hadoop.mapred.*;
 
-public class RandomPageRank 
+public class GaussSeidel 
 {	
 	public static enum MY_COUNTERS {
 		RESIDUAL, ITERATIONS
@@ -21,7 +21,6 @@ public class RandomPageRank
 	static double THRESHOLD = .001; //BlockedPageRank Reduce stopping criterion
 	static final int NUM_BLOCKS = 68; 
 	private static int[] null_array = new int[0];
-	private final static int NUM_PASSES = 6;	// number of passes of mapreduce
 	
 	//final pageranks for the largest nodes in each block
 	public static TreeMap<Integer, Double> pagerank_final = new TreeMap<Integer,Double>();
@@ -191,7 +190,8 @@ public class RandomPageRank
 				iterations += 1;
 				total_residual = 0;
 				// the next changingPR
-				HashMap<Integer, Double> changingPRNext = new HashMap<Integer,Double>(num_nodes_in_block);
+//				HashMap<Integer, Double> changingPRNext = new HashMap<Integer,Double>(num_nodes_in_block);
+				HashMap<Integer,HashMap<Integer,Double>> contributions = new HashMap<Integer,HashMap<Integer,Double>>();
 
 				for (Fiveple node_fiveple : out_nodes) {
 					// for all nodes in block:
@@ -216,14 +216,24 @@ public class RandomPageRank
 					for (int i=0; i<outlink_nodes.length; i++) {
 						if (outlink_blocks[i]==block) {
 							double sum = 0;
-							if (changingPRNext.get(outlink_nodes[i])!=null) {
-								sum = changingPRNext.get(outlink_nodes[i]);
+							if (changingPR.get(outlink_nodes[i])!=null) {
+								sum = changingPR.get(outlink_nodes[i]);
 							}
-							changingPRNext.put(outlink_nodes[i], sum + pageRankTotal/outlink_blocks.length);
+							double contribution = pageRankTotal/outlink_blocks.length;
+							HashMap<Integer,Double> local_contributions = contributions.get(node);
+							if (local_contributions == null) {
+								local_contributions = new HashMap<Integer,Double>();
+								contributions.put(node, local_contributions);
+								changingPR.put(outlink_nodes[i], sum + contribution);
+							} else {
+								changingPR.put(outlink_nodes[i], sum + contribution - local_contributions.get(outlink_nodes[i]));
+								
+							}
+							local_contributions.put(outlink_nodes[i], contribution);
 						}
 					}
 				}
-				changingPR = changingPRNext;
+//				changingPR = changingPRNext;
 //				PrintWriter writer = new PrintWriter(new FileWriter("./output/Intermediate" + key.toString() + ".txt", true));
 //				writer.write("block: " + block + " resid: " + total_residual/num_nodes_in_block + "\n");
 //				writer.write("total_resid: " + total_residual+ "\n");
@@ -263,8 +273,8 @@ public class RandomPageRank
 	public static void main(String[] args) throws Exception 
 	{
 		String bucketName = "edu-cornell-cs-cs5300s14-jkf49";
-		JobConf conf = new JobConf(RandomPageRank.class);
-		conf.setJobName("randompagerank");
+		JobConf conf = new JobConf(GaussSeidel.class);
+		conf.setJobName("gaussseidel");
 
 		conf.setOutputKeyClass(Text.class);
 		conf.setOutputValueClass(Text.class);
@@ -283,9 +293,8 @@ public class RandomPageRank
 		ArrayList<Double> avg_residuals = new ArrayList<Double>();
 		ArrayList<Double> iterations_arr = new ArrayList<Double>(); 
 		double last_residual = Double.MAX_VALUE;
-//		int i = 0;
-//		while (last_residual > THRESHOLD)
-		for (int i = 0; i < NUM_PASSES; i++)
+		int i = 0;
+		while (last_residual > THRESHOLD)
 		{
 			// TODO: input and output paths should be s3
 			// input path
@@ -301,7 +310,7 @@ public class RandomPageRank
 			
 			// output path
 			FileSystem fs = FileSystem.get(new Configuration());
-			prevPath = new Path("./randompagerank_output" + Integer.toString(i));
+			prevPath = new Path("./gaussseidel_output" + Integer.toString(i));
 			fs.delete(prevPath, true);
 			FileOutputFormat.setOutputPath(conf, prevPath);
 			
@@ -315,13 +324,13 @@ public class RandomPageRank
 			iterations_arr.add(iterations);
 			avg_residuals.add(residual_counter / N);
 			last_residual = residual_counter/N;
-//			i+=1;
+			i+=1;
 		}
 		
 		// write avg_residual values to an output file
 		try 
 		{
-			PrintWriter writer = new PrintWriter("randompagerank_output.txt");
+			PrintWriter writer = new PrintWriter("gaussseidel_output.txt");
 			for (int j=0; j<avg_residuals.size(); j++)
 			{
 				String s1 = Double.toString(avg_residuals.get(j));

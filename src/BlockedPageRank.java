@@ -21,6 +21,9 @@ public class BlockedPageRank
 	static double THRESHOLD = .001; //BlockedPageRank Reduce stopping criterion
 	static final int NUM_BLOCKS = 68; 
 	private static int[] null_array = new int[0];
+	
+	//final pageranks for the largest nodes in each block
+	public static TreeMap<Integer, Double> pagerank_final = new TreeMap<Integer,Double>();
 
 	public static class Tuple<X, Y> 
 	{ 
@@ -227,6 +230,8 @@ public class BlockedPageRank
 			}
 
 			total_residual = 0;
+			int maxnode = 0;
+			double maxnode_pagerank = 0;
 			for (Fiveple node_fiveple : out_nodes) {
 				// for all nodes in block, emit
 				Integer node = node_fiveple.v;
@@ -236,7 +241,13 @@ public class BlockedPageRank
 				int[] outlink_blocks = node_fiveple.y;
 				int[] outlink_nodes = node_fiveple.z;
 				output.collect(key, constructValue(new Text(node.toString()), -1, pagerank, outlink_blocks, outlink_nodes));
+				
+				if (maxnode<node) {
+					maxnode = node;
+					maxnode_pagerank = pagerank;
+				}
 			}
+			pagerank_final.put(maxnode, maxnode_pagerank);
 			
 			reporter.getCounter(MY_COUNTERS.RESIDUAL).increment((long)total_residual*10000);
 			reporter.getCounter(MY_COUNTERS.ITERATIONS).increment((long)iterations);
@@ -278,7 +289,8 @@ public class BlockedPageRank
 			// input path
 			if (i == 0)
 			{
-				FileInputFormat.setInputPaths(conf, new Path("s3n://" + bucketName + "/blockinput/"));
+//				FileInputFormat.setInputPaths(conf, new Path("s3n://" + bucketName + "/blockinput/"));
+				FileInputFormat.setInputPaths(conf, new Path(args[0]));
 			}
 			else
 			{
@@ -310,8 +322,12 @@ public class BlockedPageRank
 			PrintWriter writer = new PrintWriter("blockedpagerank_output.txt");
 			for (int j=0; j<avg_residuals.size(); j++)
 			{
-				writer.write("Iteration " + Integer.toString(j) + " avg residual " + Double.toString(avg_residuals.get(j)) + '\n');
-				writer.write("            avg iterations " + Double.toString(iterations_arr.get(j)) + '\n');
+				String s1 = Double.toString(avg_residuals.get(j));
+				String s2 = Double.toString(iterations_arr.get(j));
+				writer.write("Iteration " + Integer.toString(j) + " avg residual " + s1 + " , avg iterations " + s2+ "\n");
+			}
+			for (Integer k : pagerank_final.keySet()) {
+				writer.write(k + " " + pagerank_final.get(k) + "\n");
 			}
 			writer.close();
 		} 

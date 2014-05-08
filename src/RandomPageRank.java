@@ -3,14 +3,11 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.*;
-
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.*;
 import org.apache.hadoop.mapred.*;
 
-public class BlockedPageRank 
+public class RandomPageRank 
 {	
 	public static enum MY_COUNTERS {
 		RESIDUAL, ITERATIONS
@@ -21,6 +18,7 @@ public class BlockedPageRank
 	static double THRESHOLD = .001; //BlockedPageRank Reduce stopping criterion
 	static final int NUM_BLOCKS = 68; 
 	private static int[] null_array = new int[0];
+	static final int NUM_PASSES = 6;
 
 	public static class Tuple<X, Y> 
 	{ 
@@ -250,9 +248,8 @@ public class BlockedPageRank
 
 	public static void main(String[] args) throws Exception 
 	{
-		String bucketName = "edu-cornell-cs-cs5300s14-jkf49";
-		JobConf conf = new JobConf(BlockedPageRank.class);
-		conf.setJobName("blockedpagerank");
+		JobConf conf = new JobConf(RandomPageRank.class);
+		conf.setJobName("randompagerank");
 
 		conf.setOutputKeyClass(Text.class);
 		conf.setOutputValueClass(Text.class);
@@ -271,14 +268,15 @@ public class BlockedPageRank
 		ArrayList<Double> avg_residuals = new ArrayList<Double>();
 		ArrayList<Double> iterations_arr = new ArrayList<Double>(); 
 		double last_residual = Double.MAX_VALUE;
-		int i = 0;
-		while (last_residual > THRESHOLD)
+//		int i = 0;
+//		while (last_residual > THRESHOLD)
+		for (int i = 0; i < NUM_PASSES; i++)
 		{
 			// TODO: input and output paths should be s3
 			// input path
 			if (i == 0)
 			{
-				FileInputFormat.setInputPaths(conf, new Path("s3n://" + bucketName + "/blockinput/"));
+				FileInputFormat.setInputPaths(conf, new Path(args[0]));
 			}
 			else
 			{
@@ -286,9 +284,7 @@ public class BlockedPageRank
 			}
 			
 			// output path
-			FileSystem fs = FileSystem.get(new Configuration());
-			prevPath = new Path("./blockedpagerank_output" + Integer.toString(i));
-			fs.delete(prevPath, true);
+			prevPath = new Path("./randompagerank_output" + Integer.toString(i));
 			FileOutputFormat.setOutputPath(conf, prevPath);
 			
 			// run job
@@ -301,13 +297,12 @@ public class BlockedPageRank
 			iterations_arr.add(iterations);
 			avg_residuals.add(residual_counter / N);
 			last_residual = residual_counter/N;
-			i+=1;
 		}
 		
 		// write avg_residual values to an output file
 		try 
 		{
-			PrintWriter writer = new PrintWriter("blockedpagerank_output.txt");
+			PrintWriter writer = new PrintWriter("randompagerank_output.txt");
 			for (int j=0; j<avg_residuals.size(); j++)
 			{
 				writer.write("Iteration " + Integer.toString(j) + " avg residual " + Double.toString(avg_residuals.get(j)) + '\n');

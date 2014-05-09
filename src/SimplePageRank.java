@@ -68,7 +68,7 @@ public class SimplePageRank
 	{		
 		public void map(Text key, Text value, OutputCollector<Text, Text> output, Reporter reporter) throws IOException 
 		{
-			PrintWriter writer = new PrintWriter("MapEmit" + key.toString() + ".txt");
+//			PrintWriter writer = new PrintWriter("MapEmit" + key.toString() + ".txt");
 			// extract from value
 			Tuple<Double, int[]> parsed_value = parseValue(value);
 			double pagerank = parsed_value.x;
@@ -81,10 +81,10 @@ public class SimplePageRank
 				{
 					Text text_outlink = new Text(Integer.toString(outlinks[i]));
 					output.collect(text_outlink, constructValue(pagerank / N, null_array));
-					writer.write(Integer.toString(outlinks[i]) + "->");
-					writer.write(constructValue(pagerank / N, null_array).toString() + "\n");
+//					writer.write(Integer.toString(outlinks[i]) + "->");
+//					writer.write(constructValue(pagerank / N, null_array).toString() + "\n");
 				}
-				writer.close();
+//				writer.close();
 			}
 
 			// emit the set of outlinks
@@ -103,7 +103,7 @@ public class SimplePageRank
 			int[] outlinks = new int[0];
 			int numInlinks = 0;
 			double pageRankSum = 0;
-			PrintWriter writer = new PrintWriter(new FileWriter("MapReduce" + key.toString() + ".txt", true));
+//			PrintWriter writer = new PrintWriter(new FileWriter("MapReduce" + key.toString() + ".txt", true));
 			// extract from values
 			while (values.hasNext())
 			{
@@ -112,7 +112,7 @@ public class SimplePageRank
 				pagerank = parsed_value.x;
 				links = parsed_value.y;
 				numInlinks = links.length;
-				writer.write(v.toString() + "\n");
+//				writer.write(v.toString() + "\n");
 				if (numInlinks == 0) // if v is an inlink, accumulate its pagerank
 				{
 //					writer.write(Double.toString(pagerank) + "\n");
@@ -124,7 +124,7 @@ public class SimplePageRank
 					outlinks = links;
 				}
 			}
-			writer.close();
+//			writer.close();
 			double pageRankTotal = ((1-d) / N) + (pageRankSum * d);
 
 			output.collect(key, constructValue(pageRankTotal, outlinks));

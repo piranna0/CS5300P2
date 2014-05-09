@@ -3,6 +3,9 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.*;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.*;
 import org.apache.hadoop.mapred.*;
@@ -18,7 +21,10 @@ public class RandomPageRank
 	static double THRESHOLD = .001; //BlockedPageRank Reduce stopping criterion
 	static final int NUM_BLOCKS = 68; 
 	private static int[] null_array = new int[0];
-	static final int NUM_PASSES = 6;
+	private final static int NUM_PASSES = 6;	// number of passes of mapreduce
+	
+	//final pageranks for the largest nodes in each block
+	public static TreeMap<Integer, Double> pagerank_final = new TreeMap<Integer,Double>();
 
 	public static class Tuple<X, Y> 
 	{ 
@@ -225,6 +231,8 @@ public class RandomPageRank
 			}
 
 			total_residual = 0;
+			int maxnode = 0;
+			double maxnode_pagerank = 0;
 			for (Fiveple node_fiveple : out_nodes) {
 				// for all nodes in block, emit
 				Integer node = node_fiveple.v;
@@ -234,7 +242,13 @@ public class RandomPageRank
 				int[] outlink_blocks = node_fiveple.y;
 				int[] outlink_nodes = node_fiveple.z;
 				output.collect(key, constructValue(new Text(node.toString()), -1, pagerank, outlink_blocks, outlink_nodes));
+				
+				if (maxnode<node) {
+					maxnode = node;
+					maxnode_pagerank = pagerank;
+				}
 			}
+			pagerank_final.put(maxnode, maxnode_pagerank);
 			
 			reporter.getCounter(MY_COUNTERS.RESIDUAL).increment((long)total_residual*10000);
 			reporter.getCounter(MY_COUNTERS.ITERATIONS).increment((long)iterations);
@@ -248,6 +262,7 @@ public class RandomPageRank
 
 	public static void main(String[] args) throws Exception 
 	{
+		String bucketName = "edu-cornell-cs-cs5300s14-jkf49";
 		JobConf conf = new JobConf(RandomPageRank.class);
 		conf.setJobName("randompagerank");
 
@@ -276,6 +291,7 @@ public class RandomPageRank
 			// input path
 			if (i == 0)
 			{
+//				FileInputFormat.setInputPaths(conf, new Path("s3n://" + bucketName + "/blockinput/"));
 				FileInputFormat.setInputPaths(conf, new Path(args[0]));
 			}
 			else
@@ -284,7 +300,9 @@ public class RandomPageRank
 			}
 			
 			// output path
+			FileSystem fs = FileSystem.get(new Configuration());
 			prevPath = new Path("./randompagerank_output" + Integer.toString(i));
+			fs.delete(prevPath, true);
 			FileOutputFormat.setOutputPath(conf, prevPath);
 			
 			// run job
@@ -297,6 +315,7 @@ public class RandomPageRank
 			iterations_arr.add(iterations);
 			avg_residuals.add(residual_counter / N);
 			last_residual = residual_counter/N;
+//			i+=1;
 		}
 		
 		// write avg_residual values to an output file
@@ -305,8 +324,12 @@ public class RandomPageRank
 			PrintWriter writer = new PrintWriter("randompagerank_output.txt");
 			for (int j=0; j<avg_residuals.size(); j++)
 			{
-				writer.write("Iteration " + Integer.toString(j) + " avg residual " + Double.toString(avg_residuals.get(j)) + '\n');
-				writer.write("            avg iterations " + Double.toString(iterations_arr.get(j)) + '\n');
+				String s1 = Double.toString(avg_residuals.get(j));
+				String s2 = Double.toString(iterations_arr.get(j));
+				writer.write("Iteration " + Integer.toString(j) + " avg residual " + s1 + " , avg iterations " + s2+ "\n");
+			}
+			for (Integer k : pagerank_final.keySet()) {
+				writer.write(k + " " + pagerank_final.get(k) + "\n");
 			}
 			writer.close();
 		} 

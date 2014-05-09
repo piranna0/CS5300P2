@@ -1,30 +1,16 @@
-import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
-import java.io.File;
 import java.io.FileNotFoundException;
-import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.util.*;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.*;
 import org.apache.hadoop.mapred.*;
 
-import com.amazonaws.auth.BasicAWSCredentials;
-import com.amazonaws.auth.ClasspathPropertiesFileCredentialsProvider;
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.AmazonS3Client;
-import com.amazonaws.services.s3.model.ObjectMetadata;
-import com.amazonaws.services.s3.model.PutObjectRequest;
-
-public class BlockedPageRank 
+public class GaussSeidel 
 {	
 	public static enum MY_COUNTERS {
 		RESIDUAL, ITERATIONS
@@ -35,7 +21,7 @@ public class BlockedPageRank
 	static double THRESHOLD = .001; //BlockedPageRank Reduce stopping criterion
 	static final int NUM_BLOCKS = 68; 
 	private static int[] null_array = new int[0];
-
+	
 	//final pageranks for the largest nodes in each block
 	public static TreeMap<Integer, Double> pagerank_final = new TreeMap<Integer,Double>();
 
@@ -49,7 +35,7 @@ public class BlockedPageRank
 			this.y = y; 
 		} 
 	} 
-
+	
 	public static class Fiveple
 	{ 
 		public final int v;
@@ -80,7 +66,7 @@ public class BlockedPageRank
 		Double pagerank = Double.parseDouble(parts[2]);
 		int[] outlink_blocks = new int[parts.length - 3];
 		int[] outlink_nodes = new int[parts.length - 3];
-
+		
 		// if there are outlinks from this node, pass them through the output arrays
 		if (!parts[3].equals("-1"))
 		{
@@ -125,12 +111,12 @@ public class BlockedPageRank
 	{		
 		public void map(Text key, Text value, OutputCollector<Text, Text> output, Reporter reporter) throws IOException 
 		{
-			//			PrintWriter writer = new PrintWriter("MapEmit" + key.toString() + ".txt");
+//			PrintWriter writer = new PrintWriter("MapEmit" + key.toString() + ".txt");
 			// extract values
 			int block = Integer.parseInt(key.toString());
 			Fiveple parsed_value = parseValue(value);
-			//			int node = parsed_value.v;
-			//			int from_block = parsed_value.w;
+//			int node = parsed_value.v;
+//			int from_block = parsed_value.w;
 			double pagerank = parsed_value.x;
 			int[] outlink_blocks = parsed_value.y;
 			int[] outlink_nodes = parsed_value.z;
@@ -145,7 +131,7 @@ public class BlockedPageRank
 					Text text_outlink_node = new Text(Integer.toString(outlink_nodes[i]));
 					output.collect(text_outlink_block, constructValue(text_outlink_node, block, pagerank / N, null_array, null_array));
 				}
-				//				writer.close();
+//				writer.close();
 			}
 
 			// emit the set of outlinks
@@ -192,7 +178,7 @@ public class BlockedPageRank
 						constantPR.put(node, pagerank+sum);
 					}
 				}
-
+		
 			}
 
 			int num_nodes_in_block = out_nodes.size();
@@ -204,7 +190,8 @@ public class BlockedPageRank
 				iterations += 1;
 				total_residual = 0;
 				// the next changingPR
-				HashMap<Integer, Double> changingPRNext = new HashMap<Integer,Double>(num_nodes_in_block);
+//				HashMap<Integer, Double> changingPRNext = new HashMap<Integer,Double>(num_nodes_in_block);
+				HashMap<Integer,HashMap<Integer,Double>> contributions = new HashMap<Integer,HashMap<Integer,Double>>();
 
 				for (Fiveple node_fiveple : out_nodes) {
 					// for all nodes in block:
@@ -219,7 +206,7 @@ public class BlockedPageRank
 					if (constantPR.get(node)!= null) constantContribution = constantPR.get(node);
 					if (changingPR.get(node)!= null) changingContribution = changingPR.get(node);
 					double pageRankTotal = ((1-d) / N) + ((constantContribution+changingContribution) * d);
-
+					
 					//calculate residuals
 					double residual = (Math.abs(pagerankPrev - pageRankTotal) / pageRankTotal);
 					total_residual += residual;
@@ -229,18 +216,28 @@ public class BlockedPageRank
 					for (int i=0; i<outlink_nodes.length; i++) {
 						if (outlink_blocks[i]==block) {
 							double sum = 0;
-							if (changingPRNext.get(outlink_nodes[i])!=null) {
-								sum = changingPRNext.get(outlink_nodes[i]);
+							if (changingPR.get(outlink_nodes[i])!=null) {
+								sum = changingPR.get(outlink_nodes[i]);
 							}
-							changingPRNext.put(outlink_nodes[i], sum + pageRankTotal/outlink_blocks.length);
+							double contribution = pageRankTotal/outlink_blocks.length;
+							HashMap<Integer,Double> local_contributions = contributions.get(node);
+							if (local_contributions == null) {
+								local_contributions = new HashMap<Integer,Double>();
+								contributions.put(node, local_contributions);
+								changingPR.put(outlink_nodes[i], sum + contribution);
+							} else {
+								changingPR.put(outlink_nodes[i], sum + contribution - local_contributions.get(outlink_nodes[i]));
+								
+							}
+							local_contributions.put(outlink_nodes[i], contribution);
 						}
 					}
 				}
-				changingPR = changingPRNext;
-				//				PrintWriter writer = new PrintWriter(new FileWriter("./output/Intermediate" + key.toString() + ".txt", true));
-				//				writer.write("block: " + block + " resid: " + total_residual/num_nodes_in_block + "\n");
-				//				writer.write("total_resid: " + total_residual+ "\n");
-				//				writer.close();
+//				changingPR = changingPRNext;
+//				PrintWriter writer = new PrintWriter(new FileWriter("./output/Intermediate" + key.toString() + ".txt", true));
+//				writer.write("block: " + block + " resid: " + total_residual/num_nodes_in_block + "\n");
+//				writer.write("total_resid: " + total_residual+ "\n");
+//				writer.close();
 			}
 
 			total_residual = 0;
@@ -255,111 +252,29 @@ public class BlockedPageRank
 				int[] outlink_blocks = node_fiveple.y;
 				int[] outlink_nodes = node_fiveple.z;
 				output.collect(key, constructValue(new Text(node.toString()), -1, pagerank, outlink_blocks, outlink_nodes));
-
+				
 				if (maxnode<node) {
 					maxnode = node;
 					maxnode_pagerank = pagerank;
 				}
 			}
 			pagerank_final.put(maxnode, maxnode_pagerank);
-
+			
 			reporter.getCounter(MY_COUNTERS.RESIDUAL).increment((long)total_residual*10000);
 			reporter.getCounter(MY_COUNTERS.ITERATIONS).increment((long)iterations);
 
-			//			PrintWriter writer = new PrintWriter(new FileWriter("./output/Reduce" + key.toString() + ".txt", true));
-			//			writer.write("block: " + block + " resid: " + total_residual/num_nodes_in_block + "\n");
-			//			writer.close();
+//			PrintWriter writer = new PrintWriter(new FileWriter("./output/Reduce" + key.toString() + ".txt", true));
+//			writer.write("block: " + block + " resid: " + total_residual/num_nodes_in_block + "\n");
+//			writer.close();
 
-		}
-	}
-
-	public static void writeS3(String bucket, String key, String message){
-		AmazonS3 s3 = new AmazonS3Client(new BasicAWSCredentials("AKIAIQJUZCRBWBDPMNTQ","1icMGeE13StjnE7pSLpDHd0d6s8mOa+PKZpGXwHo"));
-		//		AmazonS3 s3 = new AmazonS3Client(new ClasspathPropertiesFileCredentialsProvider());
-		//		GetObjectRequest getObject = new GetObjectRequest(bucket, key);
-		//		S3Object object = s3.getObject(getObject);
-		byte[] bytes = message.getBytes();
-		InputStream is = new ByteArrayInputStream(bytes);
-		ObjectMetadata meta = new ObjectMetadata();
-		meta.setContentLength(bytes.length);
-		PutObjectRequest putObject = new PutObjectRequest(bucket, key, is, meta);
-		s3.putObject(putObject);
-
-	}
-
-	public static String getMaxPagerankBlock(Path prevPath) throws IOException{
-		TreeMap<Integer, PagerankTuple> tm = new TreeMap<Integer, PagerankTuple>();
-		String line;
-		PagerankTuple tuple;
-
-		FileSystem fs = FileSystem.get(new Configuration());
-		FileStatus[] status = fs.listStatus(prevPath);
-		for(int i = 0; i < status.length; i++){
-			String pathName = status[i].getPath().getName();
-			if(pathName.contains("part") && !pathName.contains("crc")){
-				BufferedReader br = new BufferedReader(new InputStreamReader(fs.open(status[i].getPath())));
-
-				while((line = br.readLine()) != null){
-					String[] keyValue= line.split(";");
-					int block = Integer.parseInt(keyValue[0]);
-
-					String[] parts = keyValue[1].toString().split("_");
-					Integer node = Integer.parseInt(parts[0]);
-					Double pagerank = Double.parseDouble(parts[2]);
-
-
-					if((tuple = tm.get(block)) != null){
-						if(tuple.pagerank < pagerank){
-							tm.put(block, new PagerankTuple(node, pagerank));
-						}
-					}
-					else{
-						tm.put(block, new PagerankTuple(node, pagerank));
-					}
-				}
-			}
-		}
-		StringBuffer buf = new StringBuffer();
-		for(int k : tm.keySet()){
-			buf.append("block: " + k + " " + tm.get(k) + "\n");
-		}
-		return buf.toString();
-	}
-
-	public static class PagerankTuple{
-		int node; 
-		double pagerank;
-		public PagerankTuple(Integer node, double pagerank){
-			this.node = node;
-			this.pagerank = pagerank;
-		}
-
-		public String toString(){
-			return "node: " + node + " pagerank: " + pagerank;
 		}
 	}
 
 	public static void main(String[] args) throws Exception 
 	{
-		String bucket = "";
-		String inputKey = "";
-		String outputDirectory = "";
-		String finalOutputKey = "";
-		if(args.length < 4){
-			bucket = "edu-cornell-cs-cs5300s14-jkf49";
-			inputKey = "/blockinput/";
-			outputDirectory = "./blockedpagerank_output";
-			finalOutputKey = "blockedResiduals.txt";
-		}
-		else{
-			bucket = args[0];
-			inputKey = args[1];
-			outputDirectory = args[2];
-			finalOutputKey = args[3];
-		}
-
-		JobConf conf = new JobConf(BlockedPageRank.class);
-		conf.setJobName("blockedpagerank");
+		String bucketName = "edu-cornell-cs-cs5300s14-jkf49";
+		JobConf conf = new JobConf(GaussSeidel.class);
+		conf.setJobName("gaussseidel");
 
 		conf.setOutputKeyClass(Text.class);
 		conf.setOutputValueClass(Text.class);
@@ -385,24 +300,23 @@ public class BlockedPageRank
 			// input path
 			if (i == 0)
 			{
-				FileInputFormat.setInputPaths(conf, new Path("s3n://" + bucket + inputKey));
-				//				FileInputFormat.setInputPaths(conf, new Path("s3n://" + bucketName + "/blockinput/"));
-				//				FileInputFormat.setInputPaths(conf, new Path(args[0]));
+//				FileInputFormat.setInputPaths(conf, new Path("s3n://" + bucketName + "/blockinput/"));
+				FileInputFormat.setInputPaths(conf, new Path(args[0]));
 			}
 			else
 			{
 				FileInputFormat.setInputPaths(conf, prevPath);
 			}
-
+			
 			// output path
-			//			FileSystem fs = FileSystem.get(new Configuration());
-			prevPath = new Path(outputDirectory + Integer.toString(i));
-			//			fs.delete(prevPath, true);
+			FileSystem fs = FileSystem.get(new Configuration());
+			prevPath = new Path("./gaussseidel_output" + Integer.toString(i));
+			fs.delete(prevPath, true);
 			FileOutputFormat.setOutputPath(conf, prevPath);
-
+			
 			// run job
 			rj = JobClient.runJob(conf);
-
+			
 			// read from counters
 			Counters c = rj.getCounters();
 			double residual_counter = c.getCounter(MY_COUNTERS.RESIDUAL) / 10000.;
@@ -412,36 +326,25 @@ public class BlockedPageRank
 			last_residual = residual_counter/N;
 			i+=1;
 		}
-
-		StringBuffer buf = new StringBuffer();
-		i=0;
 		
-		for (int j=0; j<avg_residuals.size(); j++)
-		{
-			String s1 = Double.toString(avg_residuals.get(j));
-			String s2 = Double.toString(iterations_arr.get(j));
-			buf.append("Iteration " + Integer.toString(j) + " avg residual " + s1 + " , avg iterations " + s2+ "\n");
-		}
-		buf.append(getMaxPagerankBlock(prevPath));
-
-		writeS3(bucket, finalOutputKey, buf.toString());
-
 		// write avg_residual values to an output file
-//		try 
-//		{
-//			PrintWriter writer = new PrintWriter("blockedpagerank_output.txt");
-//			for (int j=0; j<avg_residuals.size(); j++)
-//			{
-//				String s1 = Double.toString(avg_residuals.get(j));
-//				String s2 = Double.toString(iterations_arr.get(j));
-//				writer.write("Iteration " + Integer.toString(j) + " avg residual " + s1 + " , avg iterations " + s2+ "\n");
-//			}
-//			writer.write(getMaxPagerankBlock(prevPath));
-//			writer.close();
-//		} 
-//		catch (FileNotFoundException e)
-//		{
-//			e.printStackTrace();
-//		}
+		try 
+		{
+			PrintWriter writer = new PrintWriter("gaussseidel_output.txt");
+			for (int j=0; j<avg_residuals.size(); j++)
+			{
+				String s1 = Double.toString(avg_residuals.get(j));
+				String s2 = Double.toString(iterations_arr.get(j));
+				writer.write("Iteration " + Integer.toString(j) + " avg residual " + s1 + " , avg iterations " + s2+ "\n");
+			}
+			for (Integer k : pagerank_final.keySet()) {
+				writer.write(k + " " + pagerank_final.get(k) + "\n");
+			}
+			writer.close();
+		} 
+		catch (FileNotFoundException e)
+		{
+			e.printStackTrace();
+		}
 	}
 }

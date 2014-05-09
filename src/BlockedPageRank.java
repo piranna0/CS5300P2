@@ -175,7 +175,7 @@ public class BlockedPageRank
 				double pagerank = parsed_value.x;
 				int node = parsed_value.v;
 
-				if (outlink_blocks[0] != -1) { // v is an inlink
+				if (from_block==-1) { // v is an inlink
 					out_nodes.add(parsed_value);
 					initialPR.put(node, pagerank);
 				} else {
@@ -292,6 +292,68 @@ public class BlockedPageRank
 		String line;
 		PagerankTuple tuple;
 
+		int[] blocks = {10328, 20373, 30629, 40645, 50462, 60841, 70591
+				, 80118
+				, 90497
+				,100501
+				,110567
+				,120945
+				,130999
+				,140574
+				,150953
+				,161332
+				,171154
+				,181514
+				,191625
+				,202004
+				,212383
+				,222762
+				,232593
+				,242878
+				,252938
+				,263149
+				,273210
+				,283473
+				,293255
+				,303043
+				,313370
+				,323522
+				,333883
+				,343663
+				,353645
+				,363929
+				,374236
+				,384554
+				,394929
+				,404712
+				,414617
+				,424747
+				,434707
+				,444489
+				,454285
+				,464398
+				,474196
+				,484050
+				,493968
+				,503752
+				,514131
+				,524510
+				,534709
+				,545088
+				,555467
+				,565846
+				,576225
+				,586604
+				,596585
+				,606367
+				,616148
+				,626448
+				,636240
+				,646022
+				,655804
+				,665666
+				,675448
+				,685230};
 		FileSystem fs = FileSystem.get(new Configuration());
 		FileStatus[] status = fs.listStatus(prevPath);
 		for(int i = 0; i < status.length; i++){
@@ -308,14 +370,19 @@ public class BlockedPageRank
 					Double pagerank = Double.parseDouble(parts[2]);
 
 
-					if((tuple = tm.get(block)) != null){
-						if(tuple.pagerank < pagerank){
+					for(int j = 0; j < blocks.length; j++){
+						if(node == blocks[j]-1){
 							tm.put(block, new PagerankTuple(node, pagerank));
 						}
 					}
-					else{
-						tm.put(block, new PagerankTuple(node, pagerank));
-					}
+//					if((tuple = tm.get(block)) != null){
+//						if(tuple.pagerank < pagerank){
+//							tm.put(block, new PagerankTuple(node, pagerank));
+//						}
+//					}
+//					else{
+//						tm.put(block, new PagerankTuple(node, pagerank));
+//					}
 				}
 			}
 		}
@@ -415,7 +482,7 @@ public class BlockedPageRank
 
 		StringBuffer buf = new StringBuffer();
 		i=0;
-		
+
 		for (int j=0; j<avg_residuals.size(); j++)
 		{
 			String s1 = Double.toString(avg_residuals.get(j));
@@ -427,21 +494,21 @@ public class BlockedPageRank
 		writeS3(bucket, finalOutputKey, buf.toString());
 
 		// write avg_residual values to an output file
-//		try 
-//		{
-//			PrintWriter writer = new PrintWriter("blockedpagerank_output.txt");
-//			for (int j=0; j<avg_residuals.size(); j++)
-//			{
-//				String s1 = Double.toString(avg_residuals.get(j));
-//				String s2 = Double.toString(iterations_arr.get(j));
-//				writer.write("Iteration " + Integer.toString(j) + " avg residual " + s1 + " , avg iterations " + s2+ "\n");
-//			}
-//			writer.write(getMaxPagerankBlock(prevPath));
-//			writer.close();
-//		} 
-//		catch (FileNotFoundException e)
-//		{
-//			e.printStackTrace();
-//		}
+		//		try 
+		//		{
+		//			PrintWriter writer = new PrintWriter("blockedpagerank_output.txt");
+		//			for (int j=0; j<avg_residuals.size(); j++)
+		//			{
+		//				String s1 = Double.toString(avg_residuals.get(j));
+		//				String s2 = Double.toString(iterations_arr.get(j));
+		//				writer.write("Iteration " + Integer.toString(j) + " avg residual " + s1 + " , avg iterations " + s2+ "\n");
+		//			}
+		//			writer.write(getMaxPagerankBlock(prevPath));
+		//			writer.close();
+		//		} 
+		//		catch (FileNotFoundException e)
+		//		{
+		//			e.printStackTrace();
+		//		}
 	}
 }
